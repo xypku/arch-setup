@@ -106,6 +106,7 @@ pacman -S --noconfirm --needed $PKGS > /dev/null 2>&1
 success "Niri core packages installed."
 
 # --- Firefox Extension Auto-Install (Pywalfox) ---
+# [FIXED] Changed InstallOrUpdate to Install to fix policy error
 log "Configuring Firefox Enterprise Policies..."
 FIREFOX_POLICY_DIR="/etc/firefox/policies"
 cmd "mkdir -p $FIREFOX_POLICY_DIR"
@@ -115,7 +116,7 @@ cat <<EOT > "$FIREFOX_POLICY_DIR/policies.json"
 {
   "policies": {
     "Extensions": {
-      "InstallOrUpdate": [
+      "Install": [
         "https://addons.mozilla.org/firefox/downloads/latest/pywalfox/latest.xpi"
       ]
     }
@@ -232,6 +233,7 @@ if [ -f "$LIST_FILE" ]; then
         done
         
         # --- Phase 1: Batch Install ---
+        # Note: Default yay behavior keeps build dependencies. No --removemake used.
         if [ -n "$BATCH_LIST" ]; then
             log "Phase 1: Batch Install (Standard Pkgs)..."
             
