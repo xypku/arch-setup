@@ -1,13 +1,14 @@
 #!/bin/bash
 
 # ==============================================================================
-# Shorin Arch Setup - Main Installer (v4.0)
+# Shorin Arch Setup - Main Installer (v4.1)
 # ==============================================================================
 
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="$BASE_DIR/scripts"
 STATE_FILE="$BASE_DIR/.install_progress"
 
+# --- Source Visual Engine ---
 if [ -f "$SCRIPTS_DIR/00-utils.sh" ]; then
     source "$SCRIPTS_DIR/00-utils.sh"
 else
@@ -15,14 +16,27 @@ else
     exit 1
 fi
 
-# --- Environment Propagation ---
+# --- Global Trap (Restore Cursor on Exit) ---
+cleanup_on_exit() {
+    tput cnorm
+}
+trap cleanup_on_exit EXIT
+
+# --- Environment ---
 export DEBUG=${DEBUG:-0}
 export CN_MIRROR=${CN_MIRROR:-0}
 
 check_root
 chmod +x "$SCRIPTS_DIR"/*.sh
 
-# --- ASCII Banners ---
+# --- [NEW] Fix Pacman Lock ---
+# Automatically remove lock file if previous run crashed
+if [ -f /var/lib/pacman/db.lck ]; then
+    echo -e "${H_YELLOW}   [!] Pacman lock file detected. Removing it...${NC}"
+    rm /var/lib/pacman/db.lck
+fi
+
+# --- Banner Functions ---
 banner1() {
 cat << "EOF"
    _____ __  ______  ____  _____   __
@@ -32,7 +46,6 @@ cat << "EOF"
 /____/_/ /_/\____/_/ |_/___/_/ |_/   
 EOF
 }
-
 banner2() {
 cat << "EOF"
   ██████  ██   ██  ██████  ██████  ██ ███    ██ 
@@ -42,7 +55,6 @@ cat << "EOF"
   ██████  ██   ██  ██████  ██   ██ ██ ██   ████ 
 EOF
 }
-
 banner3() {
 cat << "EOF"
    ______ __ __   ___   ____   ____  _   _ 
@@ -65,7 +77,7 @@ show_banner() {
         2) banner3 ;;
     esac
     echo -e "${NC}"
-    echo -e "${DIM}   :: Arch Linux Automation Protocol :: v4.0 ::${NC}"
+    echo -e "${DIM}   :: Arch Linux Automation Protocol :: v4.1 ::${NC}"
     echo ""
 }
 
@@ -124,7 +136,6 @@ sys_dashboard() {
         done_count=$(wc -l < "$STATE_FILE")
         echo -e "${H_BLUE}║${NC} ${BOLD}Progress${NC} : Resuming ($done_count modules done)"
     fi
-    
     echo -e "${H_BLUE}╚══════════════════════════════════════════════════════╝${NC}"
     echo ""
 }
@@ -160,7 +171,7 @@ CURRENT_STEP=0
 log "Initializing installer sequence..."
 sleep 0.5
 
-# --- [NEW] Reflector Mirror Update ---
+# --- Reflector Mirror Update ---
 section "Pre-Flight" "Mirrorlist Optimization"
 log "Checking Reflector..."
 exe pacman -Sy --noconfirm --needed reflector
@@ -169,11 +180,10 @@ CURRENT_TZ=$(readlink -f /etc/localtime)
 REFLECTOR_ARGS="-a 24 -f 10 --sort score --save /etc/pacman.d/mirrorlist --verbose"
 
 if [[ "$CURRENT_TZ" == *"Shanghai"* ]]; then
-    # China Special Handling
     echo ""
     echo -e "${H_YELLOW}╔══════════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${H_YELLOW}║  DETECTED TIMEZONE: Asia/Shanghai                                ║${NC}"
-    echo -e "${H_YELLOW}║  Refreshing mirrors in China can be slow or unstable.            ║${NC}"
+    echo -e "${H_YELLOW}║  Refreshing mirrors in China can be slow.                        ║${NC}"
     echo -e "${H_YELLOW}║  Do you want to force refresh mirrors with Reflector?            ║${NC}"
     echo -e "${H_YELLOW}╚══════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -193,7 +203,6 @@ if [[ "$CURRENT_TZ" == *"Shanghai"* ]]; then
         log "Skipping mirror refresh."
     fi
 else
-    # Global: Auto-detect country code via IP
     log "Detecting location for optimization..."
     COUNTRY_CODE=$(curl -s --max-time 2 https://ipinfo.io/country)
     
@@ -238,14 +247,7 @@ for module in "${MODULES[@]}"; do
         echo -e "   ${H_GREEN}✔${NC} Module previously completed."
         read -p "$(echo -e "   ${H_YELLOW}Skip this module? [Y/n] ${NC}")" skip_choice
         skip_choice=${skip_choice:-Y}
-        
-        if [[ "$skip_choice" =~ ^[Yy]$ ]]; then
-            log "Skipping..."
-            continue
-        else
-            log "Force re-running..."
-            sed -i "/^${module}$/d" "$STATE_FILE"
-        fi
+        if [[ "$skip_choice" =~ ^[Yy]$ ]]; then log "Skipping..."; continue; else log "Force re-running..."; sed -i "/^${module}$/d" "$STATE_FILE"; fi
     fi
 
     bash "$script_path"
@@ -275,7 +277,13 @@ echo ""
 if [ -f "$STATE_FILE" ]; then rm "$STATE_FILE"; fi
 
 log "Archiving log..."
-FINAL_USER=$(awk -F: '$3 == 1000 {print $1}' /etc/passwd)
+# Try to read from temp file first, fallback to detection
+if [ -f "/tmp/shorin_install_user" ]; then
+    FINAL_USER=$(cat /tmp/shorin_install_user)
+else
+    FINAL_USER=$(awk -F: '$3 == 1000 {print $1}' /etc/passwd)
+fi
+
 if [ -n "$FINAL_USER" ]; then
     FINAL_DOCS="/home/$FINAL_USER/Documents"
     mkdir -p "$FINAL_DOCS"
@@ -286,7 +294,10 @@ fi
 
 echo ""
 echo -e "${H_YELLOW}>>> System requires a REBOOT.${NC}"
+
+# Clear input buffer
 while read -r -t 0; do read -r; done
+
 for i in {10..1}; do
     echo -ne "\r   ${DIM}Auto-rebooting in ${i}s... (Press 'n' to cancel)${NC}"
     read -t 1 -N 1 input
