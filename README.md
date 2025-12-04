@@ -9,7 +9,7 @@
         
         ```
         # 1. 安装 git
-        sudo pacman -Sy git
+        sudo pacman -Syu git
 
         # 2. 克隆仓库
         git clone https://github.com/SHORiN-KiWATA/shorin-arch-setup.git
@@ -21,7 +21,7 @@
         - 一条命令版
 
             ```
-            sudo pacman -S git && git clone https://github.com/SHORiN-KiWATA/shorin-arch-setup.git && cd shorin-arch-setup && sudo bash install.sh
+            sudo pacman -Syu git && git clone https://github.com/SHORiN-KiWATA/shorin-arch-setup.git && cd shorin-arch-setup && sudo bash install.sh
             ```
 
     - 可选：使用中国大陆github镜像站
@@ -30,7 +30,7 @@
 
         ```
         # 1. 使用镜像站克隆仓库
-        sudo pacman -Sy git
+        sudo pacman -Syu git
         git clone https://gitclone.com/github.com/SHORiN-KiWATA/shorin-arch-setup.git
 
         # 2. 进入目录
@@ -42,5 +42,5 @@
         - 一条命令版
 
             ```
-            sudo pacman -Sy git && git clone https://gitclone.com/github.com/SHORiN-KiWATA/shorin-arch-setup.git && cd shorin-arch-setup && sudo CN_MIRROR=1 bash install.sh
+            sudo pacman -Syu git && git clone https://gitclone.com/github.com/SHORiN-KiWATA/shorin-arch-setup.git && cd shorin-arch-setup && sudo CN_MIRROR=1 bash install.sh
             ```
