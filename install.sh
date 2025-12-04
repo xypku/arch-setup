@@ -50,8 +50,8 @@ EOF
 
 banner2() {
 cat << "EOF"
-  ██████  ██   ██  ██████  ██████  ██ ███    ██ 
-  ██      ██   ██ ██    ██ ██████  ██ ██ ██  ██ 
+  ██████  ██   ██  ██████  ███████ ██ ███    ██ 
+  ██      ██   ██ ██    ██ ██   ██ ██ ██ ██  ██ 
   ███████ ███████ ██    ██ ██████  ██ ██ ██  ██ 
        ██ ██   ██ ██    ██ ██   ██ ██ ██  ██ ██ 
   ██████  ██   ██  ██████  ██   ██ ██ ██   ████ 
@@ -304,11 +304,20 @@ while read -r -t 0; do read -r; done
 
 for i in {10..1}; do
     echo -ne "\r   ${DIM}Auto-rebooting in ${i}s... (Press 'n' to cancel)${NC}"
-    read -t 1 -N 1 input
-    if [[ "$input" == "n" || "$input" == "N" ]]; then
-        echo -e "\n\n   ${H_BLUE}>>> Reboot cancelled.${NC}"
-        exit 0
+    
+    # 修改处：使用 -n 1 并捕获返回值
+    read -t 1 -n 1 input
+    if [ $? -eq 0 ]; then
+        # 如果捕获到了输入（状态码为0）
+        if [[ "$input" == "n" || "$input" == "N" ]]; then
+            echo -e "\n\n   ${H_BLUE}>>> Reboot cancelled.${NC}"
+            exit 0
+        else
+            # 如果是回车（或除n以外的任意键），直接跳出循环去重启
+            break
+        fi
     fi
 done
+
 echo -e "\n\n   ${H_GREEN}>>> Rebooting...${NC}"
 systemctl reboot
