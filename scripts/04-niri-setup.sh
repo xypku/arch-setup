@@ -121,13 +121,6 @@ SUDO_TEMP_FILE="/etc/sudoers.d/99_shorin_installer_temp"
 echo "$TARGET_USER ALL=(ALL) NOPASSWD: ALL" > "$SUDO_TEMP_FILE"
 chmod 440 "$SUDO_TEMP_FILE"
 
-# ------------------------------------------------------------------------------
-# 4. Dependencies (LOGIC REWRITE: Batch First -> AUR Sequential -> Snapshot Recovery)
-# ------------------------------------------------------------------------------
-section "Step 4/9" "Dependencies"
-LIST_FILE="$PARENT_DIR/niri-applist.txt"
-UNDO_SCRIPT="$PARENT_DIR/undochange.sh"
-
 # --- Critical Failure Handler ---
 critical_failure_handler() {
     local failed_pkg="$1"
@@ -137,17 +130,14 @@ critical_failure_handler() {
     echo -e "\033[0;31m#                                                              #\033[0m"
     echo -e "\033[0;31m#   CRITICAL INSTALLATION FAILURE DETECTED                     #\033[0m"
     echo -e "\033[0;31m#   Package: $failed_pkg                                       #\033[0m"
+    echo -e "\033[0;31m#   Status: Package not found after install attempt.           #\033[0m"
     echo -e "\033[0;31m#                                                              #\033[0m"
-    echo -e "\033[0;31m#   Installation cannot proceed.                               #\033[0m"
     echo -e "\033[0;31m#   Would you like to restore snapshot (undo changes)?         #\033[0m"
-    echo -e "\033[0;31m#                                                              #\033[0m"
     echo -e "\033[0;31m################################################################\033[0m"
     echo ""
 
     while true; do
-        # 提示改为 [Y/n]
         read -p "Execute System Recovery? [Y/n]: " -r choice
-        
         case "$choice" in 
             [yY][eE][sS]|[yY]) 
                 if [ -f "$UNDO_SCRIPT" ]; then
@@ -160,17 +150,26 @@ critical_failure_handler() {
                 fi
                 ;;
             [nN][oO]|[nN])
-                # 新增：处理 N 输入
                 warn "User chose NOT to recover. System might be in a broken state."
                 error "Installation aborted due to failure in: $failed_pkg"
                 exit 1
                 ;;
             *)
-                # 其他乱码输入继续等待
                 echo "Invalid input. Please enter 'y' to recover or 'n' to abort."
                 ;;
         esac
     done
+}
+
+# --- Verification Function ---
+verify_installation() {
+    local pkg="$1"
+    # 使用 pacman -Q 检查包是否存在，重定向输出避免干扰
+    if pacman -Q "$pkg" &>/dev/null; then
+        return 0 # 已安装
+    else
+        return 1 # 未安装
+    fi
 }
 
 if [ -f "$LIST_FILE" ]; then
@@ -183,7 +182,6 @@ if [ -f "$LIST_FILE" ]; then
         # 1. Parse List & Separate
         for pkg in "${PACKAGE_ARRAY[@]}"; do
             [ "$pkg" == "imagemagic" ] && pkg="imagemagick"
-
             if [[ "$pkg" == "AUR:"* ]]; then
                 clean_pkg="${pkg#AUR:}"
                 AUR_LIST+=("$clean_pkg")
@@ -195,18 +193,27 @@ if [ -f "$LIST_FILE" ]; then
         # 2. Phase 1: Batch Install (Repo Packages)
         if [ ${#BATCH_LIST[@]} -gt 0 ]; then
             log "Phase 1: Batch Installing Repository Packages..."
-            # Try 1
-            if ! exe runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed --answerdiff=None --answerclean=None "${BATCH_LIST[@]}"; then
-                warn "Batch install failed. Retrying once..."
-                # Retry 1
-                if ! exe runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed --answerdiff=None --answerclean=None "${BATCH_LIST[@]}"; then
-                    critical_failure_handler "Batch Repository List"
-                else
-                    success "Batch install successful on retry."
+            
+            # 尝试安装
+            exe runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed --answerdiff=None --answerclean=None "${BATCH_LIST[@]}"
+            
+            # --- [关键修改] 批量安装后，逐一核查 ---
+            log "Verifying batch installation..."
+            for pkg in "${BATCH_LIST[@]}"; do
+                if ! verify_installation "$pkg"; then
+                    warn "Verification failed for '$pkg'. Retrying individually..."
+                    # 失败重试：单独安装这一个
+                    exe runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed "$pkg"
+                    
+                    # 二次核查
+                    if ! verify_installation "$pkg"; then
+                        critical_failure_handler "$pkg (Repo)"
+                    else
+                        success "Verified: $pkg"
+                    fi
                 fi
-            else
-                success "Batch install successful."
-            fi
+            done
+            success "Batch phase verification complete."
         fi
 
         # 3. Phase 2: Sequential Install (AUR Packages)
@@ -221,27 +228,33 @@ if [ -f "$LIST_FILE" ]; then
                 runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed --answerdiff=None --answerclean=None "$aur_pkg"
                 EXIT_CODE=$?
 
-                if [ $EXIT_CODE -eq 0 ]; then
-                    success "Installed $aur_pkg."
-                elif [ $EXIT_CODE -eq 130 ]; then
+                # Ctrl+C 跳过处理
+                if [ $EXIT_CODE -eq 130 ]; then
                     warn "Skipped '$aur_pkg' by user request (Ctrl+C)."
                     continue
-                else
-                    warn "Installation failed for '$aur_pkg'. Retrying once..."
+                fi
+
+                # --- [关键修改] 核查安装结果 ---
+                if ! verify_installation "$aur_pkg"; then
+                    warn "Verification failed for '$aur_pkg'. Retrying once..."
                     
                     # Retry 1
                     runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed --answerdiff=None --answerclean=None "$aur_pkg"
                     RETRY_CODE=$?
 
-                    if [ $RETRY_CODE -ne 0 ]; then
-                        if [ $RETRY_CODE -eq 130 ]; then
-                             warn "Skipped '$aur_pkg' on retry by user request (Ctrl+C)."
-                        else
-                             critical_failure_handler "$aur_pkg"
-                        fi
-                    else
-                        success "Installed $aur_pkg on retry."
+                    if [ $RETRY_CODE -eq 130 ]; then
+                         warn "Skipped '$aur_pkg' on retry by user request (Ctrl+C)."
+                         continue
                     fi
+
+                    # 二次核查
+                    if ! verify_installation "$aur_pkg"; then
+                        critical_failure_handler "$aur_pkg (AUR)"
+                    else
+                         success "Verified: $aur_pkg"
+                    fi
+                else
+                    success "Verified: $aur_pkg"
                 fi
             done
         fi
