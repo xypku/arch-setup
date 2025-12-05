@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# Shorin Arch Setup - Main Installer (v4.3)
+# Shorin Arch Setup - Main Installer (v4.4)
 # ==============================================================================
 
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,8 +18,6 @@ fi
 
 # --- Global Cleanup on Exit ---
 cleanup() {
-    # This function is called on EXIT.
-    # Add any other temporary files here if needed.
     rm -f "/tmp/shorin_install_user"
 }
 trap cleanup EXIT
@@ -79,7 +77,7 @@ show_banner() {
         2) banner3 ;;
     esac
     echo -e "${NC}"
-    echo -e "${DIM}   :: Arch Linux Automation Protocol :: v4.3 ::${NC}"
+    echo -e "${DIM}   :: Arch Linux Automation Protocol :: v4.4 ::${NC}"
     echo ""
 }
 
@@ -151,7 +149,7 @@ sys_dashboard
 
 # Dynamic Module List
 BASE_MODULES=(
-    "00-btrfs-init.sh"  # Critical: Must be first to create snapshot
+    "00-btrfs-init.sh"
     "01-base.sh"
     "02-musthave.sh"
     "03-user.sh"
@@ -162,8 +160,6 @@ if [ "$DESKTOP_ENV" == "niri" ]; then
 elif [ "$DESKTOP_ENV" == "kde" ]; then
     BASE_MODULES+=("06-kdeplasma-setup.sh")
 fi
-
-# Cleanup logic is now embedded in the "Completion" section at the bottom.
 
 BASE_MODULES+=("07-grub-theme.sh" "99-apps.sh")
 MODULES=("${BASE_MODULES[@]}")
@@ -176,7 +172,7 @@ CURRENT_STEP=0
 log "Initializing installer sequence..."
 sleep 0.5
 
-# --- [NEW] Reflector Mirror Update ---
+# --- Reflector Mirror Update ---
 section "Pre-Flight" "Mirrorlist Optimization"
 log "Checking Reflector..."
 exe pacman -Sy --noconfirm --needed reflector
@@ -246,33 +242,37 @@ for module in "${MODULES[@]}"; do
         continue
     fi
 
-    section "Module ${CURRENT_STEP}/${TOTAL_STEPS}" "$module"
-
+    # [MODIFIED] Checkpoint Logic: Auto-skip if in state file
     if grep -q "^${module}$" "$STATE_FILE"; then
-        echo -e "   ${H_GREEN}✔${NC} Module previously completed."
-        read -p "$(echo -e "   ${H_YELLOW}Skip this module? [Y/n] ${NC}")" skip_choice
-        skip_choice=${skip_choice:-Y}
-        if [[ "$skip_choice" =~ ^[Yy]$ ]]; then log "Skipping..."; continue; else log "Force re-running..."; sed -i "/^${module}$/d" "$STATE_FILE"; fi
+        echo -e "   ${H_GREEN}✔${NC} Module ${BOLD}${module}${NC} already completed."
+        echo -e "   ${DIM}   Skipping... (Delete .install_progress to force run)${NC}"
+        continue
     fi
+
+    section "Module ${CURRENT_STEP}/${TOTAL_STEPS}" "$module"
 
     bash "$script_path"
     exit_code=$?
 
     if [ $exit_code -eq 0 ]; then
+        # [MODIFIED] Only record success
         echo "$module" >> "$STATE_FILE"
+        success "Module $module completed."
     elif [ $exit_code -eq 130 ]; then
         echo ""
         warn "Script interrupted by user (Ctrl+C)."
         log "Exiting without rollback. You can resume later."
         exit 130
     else
+        # [MODIFIED] Failure logic: do NOT write to STATE_FILE
         write_log "FATAL" "Module $module failed with exit code $exit_code"
+        error "Module execution failed."
         exit 1
     fi
 done
 
 # ------------------------------------------------------------------------------
-# Final Cleanup (Integrated Logic)
+# Final Cleanup
 # ------------------------------------------------------------------------------
 section "Completion" "System Cleanup"
 
@@ -282,12 +282,11 @@ clean_intermediate_snapshots() {
     local marker_name="Before Shorin Setup"
     
     if ! snapper -c "$config_name" list &>/dev/null; then
-        return # Skip if config doesn't exist
+        return
     fi
 
     log "Scanning junk snapshots in: $config_name..."
 
-    # Get Marker ID (latest one)
     local start_id
     start_id=$(snapper -c "$config_name" list --columns number,description | grep "$marker_name" | awk '{print $1}' | tail -n 1)
 
@@ -301,13 +300,11 @@ clean_intermediate_snapshots() {
         local id
         local type
         
-        # Snapper Format: " # | Type | ..." -> Type is $3
         id=$(echo "$line" | awk '{print $1}')
         type=$(echo "$line" | awk '{print $3}')
 
         if [[ "$id" =~ ^[0-9]+$ ]]; then
             if [ "$id" -gt "$start_id" ]; then
-                # Delete pre, post, and single (manual/junk)
                 if [[ "$type" == "pre" || "$type" == "post" || "$type" == "single" ]]; then
                     snapshots_to_delete+=("$id")
                 fi
@@ -329,7 +326,6 @@ clean_intermediate_snapshots() {
 log "Cleaning Pacman/Yay cache..."
 exe pacman -Sc --noconfirm
 
-# Run cleanup for both Root and Home
 clean_intermediate_snapshots "root"
 clean_intermediate_snapshots "home"
 
@@ -344,7 +340,6 @@ else
 fi
 
 # --- 4. Final GRUB Update ---
-# Ensure menu is clean (remove entries for deleted snapshots)
 log "Regenerating final GRUB configuration..."
 exe grub-mkconfig -o /boot/grub/grub.cfg
 
@@ -359,7 +354,6 @@ echo ""
 if [ -f "$STATE_FILE" ]; then rm "$STATE_FILE"; fi
 
 log "Archiving log..."
-# Try to read from temp file first, fallback to detection
 if [ -f "/tmp/shorin_install_user" ]; then
     FINAL_USER=$(cat /tmp/shorin_install_user)
 else
@@ -378,13 +372,11 @@ fi
 echo ""
 echo -e "${H_YELLOW}>>> System requires a REBOOT.${NC}"
 
-# Clear input buffer
 while read -r -t 0; do read -r; done
 
 for i in {10..1}; do
     echo -ne "\r   ${DIM}Auto-rebooting in ${i}s... (Press 'n' to cancel)${NC}"
     
-    # Check for 'n' or 'N' input with 1s timeout
     read -t 1 -n 1 input
     if [ $? -eq 0 ]; then
         if [[ "$input" == "n" || "$input" == "N" ]]; then

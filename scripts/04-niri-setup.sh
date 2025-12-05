@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# 04-niri-setup.sh - Niri Desktop (Visual Enhanced & Logic Refactored)
+# 04-niri-setup.sh - Niri Desktop (Visual Enhanced & Auto-Rollback)
 # ==============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,18 +15,63 @@ check_root
 
 section "Phase 4" "Niri Desktop Environment"
 
-# ------------------------------------------------------------------------------
-# 0. Identify Target User
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# [NEW] STEP 0: Safety Checkpoint & Error Handling
+# ==============================================================================
+
+# 1. Create Checkpoint
+create_checkpoint() {
+    local marker="Before Niri Setup"
+    
+    # Check if checkpoint already exists to avoid duplicates on re-run
+    if snapper -c root list | grep -q "$marker"; then
+        log "Checkpoint '$marker' already exists. Ready to proceed."
+    else
+        log "Creating safety checkpoint: '$marker'..."
+        snapper -c root create -d "$marker"
+        
+        # Only create home snapshot if config exists
+        if snapper -c home list &>/dev/null; then
+            snapper -c home create -d "$marker"
+        fi
+        success "Checkpoint created."
+    fi
+}
+
+create_checkpoint
+
+# 2. Define Error Handler
+handle_error() {
+    local line_no=$1
+    echo ""
+    error "Script failed at line $line_no."
+    warn "Triggering automatic rollback mechanism..."
+    sleep 1
+    
+    # Call the specific Niri rollback script
+    if [ -f "$SCRIPT_DIR/niri-undochange.sh" ]; then
+        bash "$SCRIPT_DIR/niri-undochange.sh"
+    else
+        error "Rollback script (niri-undochange.sh) not found!"
+        error "System state may be inconsistent."
+    fi
+    exit 1
+}
+
+# 3. Enable Trap
+# Any command returning non-zero exit code will trigger handle_error
+trap 'handle_error $LINENO' ERR
+
+
+# ==============================================================================
+# STEP 1: Identify User & DM Check
+# ==============================================================================
 log "Identifying user..."
 DETECTED_USER=$(awk -F: '$3 == 1000 {print $1}' /etc/passwd)
 if [ -n "$DETECTED_USER" ]; then TARGET_USER="$DETECTED_USER"; else read -p "Target user: " TARGET_USER; fi
 HOME_DIR="/home/$TARGET_USER"
 info_kv "Target" "$TARGET_USER"
 
-# ------------------------------------------------------------------------------
-# [SAFETY CHECK] DM Detection
-# ------------------------------------------------------------------------------
 log "Checking Display Managers..."
 KNOWN_DMS=("gdm" "sddm" "lightdm" "lxdm" "slim" "xorg-xdm" "ly" "greetd")
 SKIP_AUTOLOGIN=false
@@ -41,15 +86,16 @@ if [ -n "$DM_FOUND" ]; then
     SKIP_AUTOLOGIN=true
 else
     info_kv "DM Check" "None"
-    read -t 20 -p "$(echo -e "   ${H_CYAN}Enable TTY auto-login? [Y/n] (Default Y in 20s): ${NC}")" choice
+    # Using read with timeout, || true ensures it doesn't trigger TRAP on timeout
+    read -t 20 -p "$(echo -e "   ${H_CYAN}Enable TTY auto-login? [Y/n] (Default Y in 20s): ${NC}")" choice || true
     if [ $? -ne 0 ]; then echo ""; fi
     choice=${choice:-Y}
     if [[ ! "$choice" =~ ^[Yy]$ ]]; then SKIP_AUTOLOGIN=true; else SKIP_AUTOLOGIN=false; fi
 fi
 
-# ------------------------------------------------------------------------------
-# 1. Install Core
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# STEP 2: Core Components
+# ==============================================================================
 section "Step 1/9" "Core Components"
 PKGS="niri xdg-desktop-portal-gnome fuzzel kitty libnotify mako polkit-gnome"
 exe pacman -Syu --noconfirm --needed $PKGS
@@ -66,9 +112,9 @@ exe chmod 755 "$FIREFOX_POLICY_DIR"
 exe chmod 644 "$FIREFOX_POLICY_DIR/policies.json"
 success "Firefox policy applied."
 
-# ------------------------------------------------------------------------------
-# 2. File Manager
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# STEP 3: File Manager
+# ==============================================================================
 section "Step 2/9" "File Manager"
 exe pacman -Syu --noconfirm --needed ffmpegthumbnailer gvfs-smb nautilus-open-any-terminal file-roller gnome-keyring gst-plugins-base gst-plugins-good gst-libav nautilus
 if [ ! -f /usr/bin/gnome-terminal ] || [ -L /usr/bin/gnome-terminal ]; then exe ln -sf /usr/bin/kitty /usr/bin/gnome-terminal; fi
@@ -79,15 +125,14 @@ if [ -f "$DESKTOP_FILE" ]; then
     ENV_VARS="env GTK_IM_MODULE=fcitx"
     if [ "$GPU_COUNT" -gt 1 ] && [ "$HAS_NVIDIA" -gt 0 ]; then ENV_VARS="env GSK_RENDERER=gl GTK_IM_MODULE=fcitx"; fi
     
-    # Check if the line is already modified to prevent duplicate entries
     if ! grep -q "^Exec=$ENV_VARS" "$DESKTOP_FILE"; then
         exe sed -i "s|^Exec=|Exec=$ENV_VARS |" "$DESKTOP_FILE"
     fi
 fi
 
-# ------------------------------------------------------------------------------
-# 3. Network Optimization
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# STEP 4: Network Optimization
+# ==============================================================================
 section "Step 3/9" "Network Optimization"
 exe pacman -Syu --noconfirm --needed flatpak gnome-software
 exe flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
@@ -108,9 +153,7 @@ fi
 
 if [ "$IS_CN_ENV" = true ]; then
     log "Enabling China Optimizations..."
-    
     select_flathub_mirror
-    
     success "Optimizations Enabled."
 else
     log "Using Global Sources."
@@ -121,63 +164,16 @@ SUDO_TEMP_FILE="/etc/sudoers.d/99_shorin_installer_temp"
 echo "$TARGET_USER ALL=(ALL) NOPASSWD: ALL" > "$SUDO_TEMP_FILE"
 chmod 440 "$SUDO_TEMP_FILE"
 
-# ------------------------------------------------------------------------------
-# 4. Dependencies (LOGIC FIXED: Verification via pacman -Q)
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# STEP 5: Dependencies (Refactored with Auto-Rollback)
+# ==============================================================================
 section "Step 4/9" "Dependencies"
 LIST_FILE="$PARENT_DIR/niri-applist.txt"
-UNDO_SCRIPT="$PARENT_DIR/undochange.sh"
 
-# --- Critical Failure Handler ---
-critical_failure_handler() {
-    local failed_pkg="$1"
-    
-    echo ""
-    echo -e "\033[0;31m################################################################\033[0m"
-    echo -e "\033[0;31m#                                                              #\033[0m"
-    echo -e "\033[0;31m#   CRITICAL INSTALLATION FAILURE DETECTED                     #\033[0m"
-    echo -e "\033[0;31m#   Package: $failed_pkg                                       #\033[0m"
-    echo -e "\033[0;31m#   Status: Package not found after install attempt.           #\033[0m"
-    echo -e "\033[0;31m#                                                              #\033[0m"
-    echo -e "\033[0;31m#   Would you like to restore snapshot (undo changes)?         #\033[0m"
-    echo -e "\033[0;31m################################################################\033[0m"
-    echo ""
-
-    while true; do
-        read -p "Execute System Recovery? [y/n]: " -r choice
-        case "$choice" in 
-            [yY][eE][sS]|[yY]) 
-                if [ -f "$UNDO_SCRIPT" ]; then
-                    warn "Executing recovery script: $UNDO_SCRIPT"
-                    bash "$UNDO_SCRIPT"
-                    exit 1
-                else
-                    error "Recovery script not found at: $UNDO_SCRIPT"
-                    exit 1
-                fi
-                ;;
-            [nN][oO]|[nN])
-                warn "User chose NOT to recover. System might be in a broken state."
-                error "Installation aborted due to failure in: $failed_pkg"
-                exit 1
-                ;;
-            *)
-                # 修改了这里：使用 \033[1;33m (亮黄色) 和 -e 参数
-                echo -e "\033[1;33mInvalid input. Please enter 'y' to recover or 'n' to abort.\033[0m"
-                ;;
-        esac
-    done
-}
-
-# --- Verification Function ---
+# Verification Function
 verify_installation() {
     local pkg="$1"
-    # 使用 pacman -Q 检查包是否存在，重定向输出避免干扰
-    if pacman -Q "$pkg" &>/dev/null; then
-        return 0 # 已安装
-    else
-        return 1 # 未安装
-    fi
+    if pacman -Q "$pkg" &>/dev/null; then return 0; else return 1; fi
 }
 
 if [ -f "$LIST_FILE" ]; then
@@ -202,20 +198,21 @@ if [ -f "$LIST_FILE" ]; then
         if [ ${#BATCH_LIST[@]} -gt 0 ]; then
             log "Phase 1: Batch Installing Repository Packages..."
             
-            # 尝试安装
+            # Note: We use '|| handle_error' to explicitly catch yay failures if trap misses subshells
             exe runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed --answerdiff=None --answerclean=None "${BATCH_LIST[@]}"
             
-            # --- [关键修改] 批量安装后，逐一核查 ---
             log "Verifying batch installation..."
             for pkg in "${BATCH_LIST[@]}"; do
                 if ! verify_installation "$pkg"; then
                     warn "Verification failed for '$pkg'. Retrying individually..."
-                    # 失败重试：单独安装这一个
+                    # Retry
                     exe runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed "$pkg"
                     
-                    # 二次核查
+                    # Final Check
                     if ! verify_installation "$pkg"; then
-                        critical_failure_handler "$pkg (Repo)"
+                        # Manually trigger the error handler
+                        error "CRITICAL: Failed to install '$pkg' after retry."
+                        handle_error $LINENO
                     else
                         success "Verified: $pkg"
                     fi
@@ -232,22 +229,24 @@ if [ -f "$LIST_FILE" ]; then
             for aur_pkg in "${AUR_LIST[@]}"; do
                 log "Installing '$aur_pkg'..."
                 
-                # Try 1
-                runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed --answerdiff=None --answerclean=None "$aur_pkg"
+                # Use || true to prevent Ctrl+C (130) from triggering the global TRAP immediately
+                runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed --answerdiff=None --answerclean=None "$aur_pkg" || true
                 EXIT_CODE=$?
 
-                # Ctrl+C 跳过处理
+                # Handle Ctrl+C skip
                 if [ $EXIT_CODE -eq 130 ]; then
                     warn "Skipped '$aur_pkg' by user request (Ctrl+C)."
                     continue
+                elif [ $EXIT_CODE -ne 0 ]; then
+                    warn "Yay exited with error code $EXIT_CODE for '$aur_pkg'. Will try to verify."
                 fi
 
-                # --- [关键修改] 核查安装结果 ---
+                # Verification
                 if ! verify_installation "$aur_pkg"; then
                     warn "Verification failed for '$aur_pkg'. Retrying once..."
                     
-                    # Retry 1
-                    runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed --answerdiff=None --answerclean=None "$aur_pkg"
+                    # Retry
+                    runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed --answerdiff=None --answerclean=None "$aur_pkg" || true
                     RETRY_CODE=$?
 
                     if [ $RETRY_CODE -eq 130 ]; then
@@ -255,9 +254,10 @@ if [ -f "$LIST_FILE" ]; then
                          continue
                     fi
 
-                    # 二次核查
+                    # Final Check
                     if ! verify_installation "$aur_pkg"; then
-                        critical_failure_handler "$aur_pkg (AUR)"
+                        error "CRITICAL: Failed to install '$aur_pkg' (AUR) after retry."
+                        handle_error $LINENO
                     else
                          success "Verified: $aur_pkg"
                     fi
@@ -278,28 +278,23 @@ else
     warn "niri-applist.txt not found."
 fi
 
-# ------------------------------------------------------------------------------
-# 5. Dotfiles
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# STEP 6: Dotfiles
+# ==============================================================================
 section "Step 5/9" "Deploying Dotfiles"
 
-# Define URLs
 REPO_GITHUB="https://github.com/SHORiN-KiWATA/ShorinArchExperience-ArchlinuxGuide.git"
 REPO_GITEE="https://gitee.com/shorinkiwata/ShorinArchExperience-ArchlinuxGuide.git"
 TEMP_DIR="/tmp/shorin-repo"
 
-# Ensure clean start
 rm -rf "$TEMP_DIR"
-
 log "Cloning configuration repository..."
 
 # Attempt 1: GitHub
-if exe runuser -u "$TARGET_USER" -- git clone "$REPO_GITHUB" "$TEMP_DIR"; then
+if runuser -u "$TARGET_USER" -- git clone "$REPO_GITHUB" "$TEMP_DIR"; then
     success "Cloned successfully (Source: GitHub)."
 else
     warn "GitHub clone failed. Attempting fallback to Gitee..."
-    
-    # Clean partial files from failed attempt
     rm -rf "$TEMP_DIR"
     
     # Attempt 2: Gitee
@@ -307,18 +302,17 @@ else
         success "Cloned successfully (Source: Gitee)."
     else
         error "Clone failed from both GitHub and Gitee."
+        # Clone failure is critical enough to trigger rollback?
+        # Let's assume yes for a perfect setup.
+        handle_error $LINENO
     fi
 fi
 
 if [ -d "$TEMP_DIR/dotfiles" ]; then
-    # --- Check UID 1000 and remove bookmarks if not shorin ---
     UID1000_USER=$(id -nu 1000 2>/dev/null)
-    
     if [ "$UID1000_USER" != "shorin" ]; then
-        log "UID 1000 user ($UID1000_USER) is not shorin. Removing gtk bookmarks..."
         rm -f "$TEMP_DIR/dotfiles/.config/gtk-3.0/bookmarks"
     fi
-    # ---------------------------------------------------------
 
     BACKUP_NAME="config_backup_$(date +%s).tar.gz"
     log "Backing up..."
@@ -327,7 +321,6 @@ if [ -d "$TEMP_DIR/dotfiles" ]; then
     log "Applying..."
     exe runuser -u "$TARGET_USER" -- cp -rf "$TEMP_DIR/dotfiles/." "$HOME_DIR/"
 
-    # --- Re-link GTK 4.0 Assets for dynamic user path ---
     log "Fixing GTK 4.0 symlinks..."
     GTK4_CONF="$HOME_DIR/.config/gtk-4.0"
     THEME_SRC="$HOME_DIR/.themes/adw-gtk3-dark/gtk-4.0"
@@ -337,7 +330,6 @@ if [ -d "$TEMP_DIR/dotfiles" ]; then
     exe runuser -u "$TARGET_USER" -- ln -sf "$THEME_SRC/gtk.css" "$GTK4_CONF/gtk.css"
     exe runuser -u "$TARGET_USER" -- ln -sf "$THEME_SRC/assets" "$GTK4_CONF/assets"
 
-    # --- Apply Flatpak GTK Theming Overrides ---
     if command -v flatpak &>/dev/null; then
         log "Applying Flatpak GTK theme overrides..."
         exe runuser -u "$TARGET_USER" -- flatpak override --user --filesystem="$HOME_DIR/.themes"
@@ -350,7 +342,6 @@ if [ -d "$TEMP_DIR/dotfiles" ]; then
     if [ "$TARGET_USER" != "shorin" ]; then
         log "Cleaning output.kdl..."
         exe runuser -u "$TARGET_USER" -- truncate -s 0 "$HOME_DIR/.config/niri/output.kdl"
-        # Clean excluded
         EXCLUDE_FILE="$PARENT_DIR/exclude-dotfiles.txt"
         if [ -f "$EXCLUDE_FILE" ]; then
             mapfile -t EXCLUDES < <(grep -vE "^\s*#|^\s*$" "$EXCLUDE_FILE" | tr -d '\r')
@@ -366,9 +357,9 @@ else
     warn "Dotfiles missing."
 fi
 
-# ------------------------------------------------------------------------------
-# 6. Wallpapers
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# STEP 7: Wallpapers
+# ==============================================================================
 section "Step 6/9" "Wallpapers"
 WALL_DEST="$HOME_DIR/Pictures/Wallpapers"
 if [ -d "$TEMP_DIR/wallpapers" ]; then
@@ -378,9 +369,9 @@ if [ -d "$TEMP_DIR/wallpapers" ]; then
 fi
 rm -rf "$TEMP_DIR"
 
-# ------------------------------------------------------------------------------
-# 7. Hardware Tools
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# STEP 8: Hardware Tools
+# ==============================================================================
 section "Step 7/9" "Hardware"
 exe runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed ddcutil-service
 gpasswd -a "$TARGET_USER" i2c
@@ -388,16 +379,16 @@ exe pacman -Syu --noconfirm --needed swayosd
 systemctl enable --now swayosd-libinput-backend.service > /dev/null 2>&1
 success "Tools configured."
 
-# ------------------------------------------------------------------------------
-# Cleanup
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# STEP 9: Cleanup
+# ==============================================================================
 section "Step 9/9" "Cleanup"
 rm -f "$SUDO_TEMP_FILE"
 success "Done."
 
-# ------------------------------------------------------------------------------
-# 10. Auto-Login
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# STEP 10: Auto-Login
+# ==============================================================================
 section "Final" "Boot Config"
 USER_SYSTEMD_DIR="$HOME_DIR/.config/systemd/user"
 WANTS_DIR="$USER_SYSTEMD_DIR/default.target.wants"
@@ -438,5 +429,12 @@ EOT
     exe chown -R "$TARGET_USER" "$HOME_DIR/.config/systemd"
     success "Enabled."
 fi
+
+# ==============================================================================
+# STEP 11: Completion
+# ==============================================================================
+
+# Disable trap to avoid false positives during exit
+trap - ERR
 
 log "Module 04 completed."
