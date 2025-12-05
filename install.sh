@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# Shorin Arch Setup - Main Installer (v4.1)
+# Shorin Arch Setup - Main Installer (v4.3)
 # ==============================================================================
 
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -79,7 +79,7 @@ show_banner() {
         2) banner3 ;;
     esac
     echo -e "${NC}"
-    echo -e "${DIM}   :: Arch Linux Automation Protocol :: v4.1 ::${NC}"
+    echo -e "${DIM}   :: Arch Linux Automation Protocol :: v4.3 ::${NC}"
     echo ""
 }
 
@@ -163,9 +163,7 @@ elif [ "$DESKTOP_ENV" == "kde" ]; then
     BASE_MODULES+=("06-kdeplasma-setup.sh")
 fi
 
-# [NEW] Insert Cleanup BEFORE GRUB Theme
-# This ensures we clean up installation snapshots before finalizing the bootloader
-BASE_MODULES+=("06-post-install-cleanup.sh")
+# Cleanup logic is now embedded in the "Completion" section at the bottom.
 
 BASE_MODULES+=("07-grub-theme.sh" "99-apps.sh")
 MODULES=("${BASE_MODULES[@]}")
@@ -274,21 +272,82 @@ for module in "${MODULES[@]}"; do
 done
 
 # ------------------------------------------------------------------------------
-# Final Cleanup (KISS Principle)
+# Final Cleanup (Integrated Logic)
 # ------------------------------------------------------------------------------
-section "Completion" "Cleanup"
+section "Completion" "System Cleanup"
 
-# Logic: Only delete if the standard /root path exists.
-# If running as a normal user (cloned in ~), this does nothing (safer).
+# --- 1. Snapshot Cleanup Logic ---
+clean_intermediate_snapshots() {
+    local config_name="$1"
+    local marker_name="Before Shorin Setup"
+    
+    if ! snapper -c "$config_name" list &>/dev/null; then
+        return # Skip if config doesn't exist
+    fi
+
+    log "Scanning junk snapshots in: $config_name..."
+
+    # Get Marker ID (latest one)
+    local start_id
+    start_id=$(snapper -c "$config_name" list --columns number,description | grep "$marker_name" | awk '{print $1}' | tail -n 1)
+
+    if [ -z "$start_id" ]; then
+        warn "Marker '$marker_name' not found in '$config_name'. Skipping."
+        return
+    fi
+
+    local snapshots_to_delete=()
+    while read -r line; do
+        local id
+        local type
+        
+        # Snapper Format: " # | Type | ..." -> Type is $3
+        id=$(echo "$line" | awk '{print $1}')
+        type=$(echo "$line" | awk '{print $3}')
+
+        if [[ "$id" =~ ^[0-9]+$ ]]; then
+            if [ "$id" -gt "$start_id" ]; then
+                # Delete pre, post, and single (manual/junk)
+                if [[ "$type" == "pre" || "$type" == "post" || "$type" == "single" ]]; then
+                    snapshots_to_delete+=("$id")
+                fi
+            fi
+        fi
+    done < <(snapper -c "$config_name" list --columns number,type)
+
+    if [ ${#snapshots_to_delete[@]} -gt 0 ]; then
+        log "Deleting ${#snapshots_to_delete[@]} snapshots in '$config_name'..."
+        if exe snapper -c "$config_name" delete "${snapshots_to_delete[@]}"; then
+            success "Cleaned $config_name."
+        fi
+    else
+        log "No junk snapshots found in '$config_name'."
+    fi
+}
+
+# --- 2. Execute Cleanup ---
+log "Cleaning Pacman/Yay cache..."
+exe pacman -Sc --noconfirm
+
+# Run cleanup for both Root and Home
+clean_intermediate_snapshots "root"
+clean_intermediate_snapshots "home"
+
+# --- 3. Remove Installer Files ---
 if [ -d "/root/shorin-arch-setup" ]; then
     log "Removing installer from /root..."
-    # Move to root to avoid 'cannot remove current directory' error
     cd /
     rm -rfv /root/shorin-arch-setup
 else
-    log "Cleanup skipped (Repository not found in /root/shorin-arch-setup)."
+    log "Repo cleanup skipped (not in /root/shorin-arch-setup)."
     log "If you cloned this manually, please remove the folder yourself."
 fi
+
+# --- 4. Final GRUB Update ---
+# Ensure menu is clean (remove entries for deleted snapshots)
+log "Regenerating final GRUB configuration..."
+exe grub-mkconfig -o /boot/grub/grub.cfg
+
 # --- Completion ---
 clear
 show_banner
@@ -314,8 +373,6 @@ if [ -n "$FINAL_USER" ]; then
     chown -R "$FINAL_USER:$FINAL_USER" "$FINAL_DOCS"
     echo -e "   ${H_BLUE}●${NC} Log Saved     : ${BOLD}$FINAL_DOCS/log-shorin-arch-setup.txt${NC}"
 fi
-
-
 
 # --- Reboot Countdown ---
 echo ""
