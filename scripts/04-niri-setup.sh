@@ -239,14 +239,15 @@ if [ -f "$LIST_FILE" ]; then
             --layout=reverse \
             --border \
             --margin=1,2 \
-            --prompt="Search (Type to filter) > " \
+            --prompt="Search > " \
             --pointer="->" \
             --marker="+" \
             --info=hidden \
-            --header="TAB: Select/Unselect | ENTER: Confirm | CTRL-A: Select All" \
+            --header="TAB: Select | ENTER: Confirm | CTRL-A: Select All" \
             --preview "echo {} | awk -F'#' '{print \$2}' | sed 's/^ //'" \
             --preview-window=right:45%:wrap:border-left \
-            --color=dark,fg+:bright-white,bg+:black,hl:yellow,hl+:yellow,info:hidden,prompt:cyan,pointer:cyan,marker:green,spinner:yellow,header:gray)
+            --bind "ctrl-a:select-all,ctrl-d:deselect-all" \
+            --color=dark,fg+:bright-white,bg+:black,hl:yellow,hl+:yellow,prompt:cyan,pointer:cyan,marker:green,spinner:yellow,header:gray)
     
     # Check if user cancelled (Empty output)
     if [ -z "$SELECTED_LINES" ]; then
