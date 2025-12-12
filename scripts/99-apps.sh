@@ -158,7 +158,7 @@ if [ "$USER_INTERVENTION" = true ]; then
     fi
 else
     # --- Auto Confirm (Timeout) ---
-    log "Timeout reached (120s). Auto-confirming ALL applications."
+    log "Timeout reached. Auto-confirming ALL applications."
     SELECTED_RAW=$(printf "%s\n" "${PARSED_LIST[@]}")
 fi
 
