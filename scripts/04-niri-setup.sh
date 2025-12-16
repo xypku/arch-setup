@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# 04-niri-setup.sh - Niri Desktop (Final Optimized)
+# 04-niri-setup.sh - Niri Desktop (Robust AUR Retry Version)
 # ==============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,7 +25,7 @@ as_user() {
     runuser -u "$TARGET_USER" -- "$@"
 }
 
-# 2. Critical Failure Handler (The "Big Red Box" - Safe Alignment)
+# 2. Critical Failure Handler
 critical_failure_handler() {
     local failed_reason="$1"
     trap - ERR
@@ -68,20 +68,44 @@ critical_failure_handler() {
     done
 }
 
-# 3. 通用包安装验证函数
+# 3. Robust Package Installation with Retry Loop (NEW)
 ensure_package_installed() {
     local pkg="$1"
     local context="$2" # e.g., "Repo" or "AUR"
+    local max_attempts=3
+    local attempt=1
+    local install_success=false
 
+    # 1. Check if already installed
     if pacman -Q "$pkg" &>/dev/null; then
         return 0
     fi
 
-    warn "Package '$pkg' missing or failed. Retrying ($context)..."
-    as_user yay -S --noconfirm --needed --answerdiff=None --answerclean=None "$pkg" || true
+    # 2. Retry Loop
+    while [ $attempt -le $max_attempts ]; do
+        if [ $attempt -gt 1 ]; then
+             warn "Retrying '$pkg' ($context)... (Attempt $attempt/$max_attempts)"
+             sleep 3 # Cooldown to let network recover
+        else
+             log "Installing '$pkg' ($context)..."
+        fi
 
-    if ! pacman -Q "$pkg" &>/dev/null; then
-        critical_failure_handler "Failed to install '$pkg' ($context)."
+        # Try installation
+        if as_user yay -S --noconfirm --needed --answerdiff=None --answerclean=None "$pkg"; then
+            install_success=true
+            break
+        else
+            warn "Attempt $attempt/$max_attempts failed for '$pkg'."
+        fi
+
+        ((attempt++))
+    done
+
+    # 3. Final Verification
+    if [ "$install_success" = true ] && pacman -Q "$pkg" &>/dev/null; then
+        success "Installed '$pkg'."
+    else
+        critical_failure_handler "Failed to install '$pkg' after $max_attempts attempts."
     fi
 }
 
@@ -139,10 +163,9 @@ else
 fi
 
 # ==============================================================================
-# STEP 2: Core Components (The ONLY -Syu)
+# STEP 2: Core Components
 # ==============================================================================
 section "Step 1/9" "Core Components"
-# Optimization: This is the ONLY time we refresh the database and update system
 PKGS="niri xdg-desktop-portal-gnome fuzzel kitty firefox libnotify mako polkit-gnome"
 exe pacman -Syu --noconfirm --needed $PKGS
 
@@ -156,7 +179,6 @@ exe chmod 755 "$POL_DIR" && exe chmod 644 "$POL_DIR/policies.json"
 # STEP 3: File Manager
 # ==============================================================================
 section "Step 2/9" "File Manager"
-# Optimization: No -y or -u
 exe pacman -S --noconfirm --needed ffmpegthumbnailer gvfs-smb nautilus-open-any-terminal file-roller gnome-keyring gst-plugins-base gst-plugins-good gst-libav nautilus
 
 if [ ! -f /usr/bin/gnome-terminal ] || [ -L /usr/bin/gnome-terminal ]; then 
@@ -201,7 +223,7 @@ echo "$TARGET_USER ALL=(ALL) NOPASSWD: ALL" > "$SUDO_TEMP_FILE"
 chmod 440 "$SUDO_TEMP_FILE"
 
 # ==============================================================================
-# STEP 5: Dependencies (Updated)
+# STEP 5: Dependencies
 # ==============================================================================
 section "Step 4/9" "Dependencies"
 LIST_FILE="$PARENT_DIR/niri-applist.txt"
@@ -244,7 +266,7 @@ if [ -f "$LIST_FILE" ]; then
     FINAL_ARRAY=()
     if [ ${#PACKAGE_ARRAY[@]} -gt 0 ]; then
         for pkg in "${PACKAGE_ARRAY[@]}"; do
-            if [ "${pkg,,}" == "lazyvim" ]; then # ${var,,} converts to lowercase
+            if [ "${pkg,,}" == "lazyvim" ]; then 
                 INSTALL_LAZYVIM=true
                 FINAL_ARRAY+=("${LAZYVIM_DEPS[@]}")
                 info_kv "Config" "LazyVim detected" "Setup deferred to post-dotfiles"
@@ -280,7 +302,7 @@ if [ -f "$LIST_FILE" ]; then
 
         # 2. Sequential AUR Install
         if [ ${#AUR_LIST[@]} -gt 0 ]; then
-            log "Phase 2: Installing AUR Packages..."
+            log "Phase 2: Installing AUR Packages (Sequential)..."
             for pkg in "${AUR_LIST[@]}"; do
                 ensure_package_installed "$pkg" "AUR"
             done
@@ -291,9 +313,6 @@ if [ -f "$LIST_FILE" ]; then
             warn "Waybar missing. Installing stock..."
             exe pacman -S --noconfirm --needed waybar
         fi
-        
-        # Note: LazyVim configuration is deliberately skipped here to avoid 
-        # backup conflicts with the Dotfiles step. It runs in Step 6.
     else
         warn "No packages selected."
     fi
@@ -366,7 +385,6 @@ if [ "$INSTALL_LAZYVIM" = true ]; then
     section "Config" "Applying LazyVim Overrides"
     NVIM_CFG="$HOME_DIR/.config/nvim"
     
-    # Check if dotfiles or existing install put something here
     if [ -d "$NVIM_CFG" ]; then
         BACKUP_PATH="$HOME_DIR/.config/nvim.old.dotfiles.$(date +%s)"
         warn "Collision detected. Moving existing nvim config to $BACKUP_PATH"
@@ -436,7 +454,6 @@ Restart=on-failure
 WantedBy=default.target
 EOT
     as_user ln -sf "../niri-autostart.service" "$LINK"
-    # Ensure ownership is correct if root touched it
     chown -R "$TARGET_USER:$TARGET_USER" "$SVC_DIR"
     success "Enabled."
 fi
