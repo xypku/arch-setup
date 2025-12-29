@@ -326,17 +326,34 @@ if pacman -Qi wine &>/dev/null; then
 
   if [ -d "$FONT_SRC" ]; then
     log "Copying Windows fonts from resources..."
-    as_user mkdir -p "$FONT_DEST"
-    cp -r "$FONT_SRC"/* "$FONT_DEST/"
-    # 修复权限
-    chown -R "$TARGET_USER:$TARGET_USER" "$FONT_DEST"
-    success "Wine fonts installed."
+    
+    # 1. 确保目标目录存在 (以用户身份创建)
+    if [ ! -d "$FONT_DEST" ]; then
+        as_user mkdir -p "$FONT_DEST"
+    fi
+
+    # 2. 执行复制 (关键修改：直接以目标用户身份复制，而不是 Root 复制后再 Chown)
+    # 使用 cp -rT 确保目录内容合并，而不是把源目录本身拷进去
+    # 注意：这里假设 as_user 能够接受命令参数。如果 as_user 只是简单的 su/sudo 封装：
+    if sudo -u "$TARGET_USER" cp -rf "$FONT_SRC"/. "$FONT_DEST/"; then
+        success "Fonts copied successfully."
+    else
+        error "Failed to copy fonts."
+    fi
+
+    # 3. 强制刷新 Wine 字体缓存 (非常重要！)
+    # 字体文件放进去了，但 Wine 不一定会立刻重修构建 fntdata.dat
+    # 杀死 wineserver 会强制 Wine 下次启动时重新扫描系统和本地配置
+    log "Refreshing Wine font cache..."
+    if command -v wineserver &> /dev/null; then
+        # 必须以目标用户身份执行 wineserver -k
+        as_user env WINEPREFIX="$WINE_PREFIX" wineserver -k
+    fi
+    
+    success "Wine fonts installed and cache refresh triggered."
   else
     warn "Resources font directory not found at: $FONT_SRC"
   fi
-  
-  success "Wine environment configured."
-fi
 
 # --- Steam Locale Fix ---
 STEAM_desktop_modified=false
