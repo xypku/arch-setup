@@ -27,3 +27,5 @@
 - 增加quickshell可选
 
 - gnome自动配置
+
+- 隐藏无用的.desktop文件
