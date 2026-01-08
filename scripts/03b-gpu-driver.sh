@@ -173,7 +173,7 @@ if [ ${#PKGS[@]} -gt 0 ]; then
     log "Target Packages: ${UNIQUE_PKGS[*]}"
     
     # 执行安装
-    exe runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed --answerdiff=None --answerclean=None "${UNIQUE_PKGS[@]}"
+    exe runuser -u "$TARGET_USER" -- yay -S --noconfirm --needed --answerdiff=None --answerclean=None "${UNIQUE_PKGS[@]}"
     
     log "Enabling nvidia-powerd (if supported)..."
     systemctl enable --now nvidia-powerd &>/dev/null || true

@@ -255,14 +255,14 @@ if [ -f "$LIST_FILE" ]; then
 
         if [ ${#REPO_QUEUE[@]} -gt 0 ]; then
             # Batch Install
-            exe runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed --answerdiff=None --answerclean=None "${REPO_QUEUE[@]}"
+            exe runuser -u "$TARGET_USER" -- yay -S --noconfirm --needed --answerdiff=None --answerclean=None "${REPO_QUEUE[@]}"
             
             # Verify Loop
             log "Verifying batch installation..."
             for pkg in "${REPO_QUEUE[@]}"; do
                 if ! verify_installation "$pkg"; then
                     warn "Verification failed for '$pkg'. Retrying individually..."
-                    exe runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed "$pkg"
+                    exe runuser -u "$TARGET_USER" -- yay -S --noconfirm --needed "$pkg"
                     
                     if ! verify_installation "$pkg"; then
                         critical_failure_handler "$pkg (Repo)"
@@ -298,7 +298,7 @@ if [ -f "$LIST_FILE" ]; then
                     sleep 3
                 fi
                 
-                runuser -u "$TARGET_USER" -- yay -Syu --noconfirm --needed --answerdiff=None --answerclean=None "$aur_pkg"
+                runuser -u "$TARGET_USER" -- yay -S --noconfirm --needed --answerdiff=None --answerclean=None "$aur_pkg"
                 EXIT_CODE=$?
 
                 # Handle Ctrl+C skip
