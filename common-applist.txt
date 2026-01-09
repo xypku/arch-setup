@@ -14,7 +14,7 @@ gamescope                                # gaming conpositor made by Valve
 upscaler                                 # image upscaler (make it more clear)
 curtail                                  # compress image (make it smaller)    
 lact                                     # GPU Control Tool (Overclocking/Fan)
-
+obs-studio                               # OBS Studio (Streaming & Recording)
 # --- System Utilities ---
 yazi                                     # Blazing fast terminal file manager
 btop                                     # Resource Monitor (TUI)
@@ -48,7 +48,6 @@ AUR:mangojuice-bin                       # GUI for mangohud
 AUR:gearlever                            # AppImage Manager (Integrates AppImages)
 
 # --- Flatpak Packages (Prefix with flatpak:) ---      
-flatpak:com.obsproject.Studio            # OBS Studio (Streaming & Recording)
 flatpak:io.github.fabrialberio.pinapp    # PinApp (Unofficial Pinterest Client)
 flatpak:com.github.wwmm.easyeffects      # Audio Effects for PipeWire (Equalizer)
 flatpak:com.github.unrud.VideoDownloader # Download youtube or bilibili videos
