@@ -90,6 +90,7 @@ select_desktop() {
         "No Desktop |none"
         "Shorin's Niri |niri"
         "Shorin's KDE Plasma |kde"
+        "GNOME |gnome"
         "Quickshell--DankMaterialShell (dms) |dms"
     )
     
