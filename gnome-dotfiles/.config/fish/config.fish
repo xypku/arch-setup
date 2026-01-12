@@ -24,7 +24,9 @@ thefuck --alias | source
 # fa运行fastfetch
 abbr fa fastfetch
 # f运行带二次元美少女的fastfetch
-
+function f 
+    command bash $HOME/.config/scripts/fastfetch-random-wife.sh
+   end
 # fzf安装软件包
 function pac --description "Fuzzy search and install packages with accurate installed status"
     # --- 1. 环境与颜色配置 ---
