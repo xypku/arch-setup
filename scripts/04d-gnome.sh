@@ -362,7 +362,10 @@ sudo -u $TARGET_USER mkdir -p $HOME_DIR/.config
 # 使用 /. 语法将源文件夹的*内容*合并到目标文件夹
 log "Copying dotfiles..."
 cp -rf "$GNOME_DOTFILES_DIR/." "$HOME_DIR/"
-
+as_user mkdir -p "$HOME_DIR/Templates"
+as_user touch "$HOME_DIR/Templates/new"
+as_user touch "$HOME_DIR/Templates/new.sh"
+as_user echo "#!/bin/bash" >> "$HOME_DIR/Templates/new.sh"
 # 3. 修复权限 (因为 cp 是 root 运行的)
 # 明确修复 home 目录下的关键配置文件夹，避免权限问题
 log "Fixing permissions..."
