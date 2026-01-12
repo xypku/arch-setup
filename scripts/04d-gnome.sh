@@ -224,6 +224,7 @@ EXTENSION_LIST=(
     "user-theme@gnome-shell-extensions.gcampax.github.com"
     "kimpanel@kde.org"
     "rounded-window-corners@fxgn"
+    "appindicatorsupport@rgcjonas.gmail.com"
 )
 log "Downloading extensions..."
 sudo -u $TARGET_USER gnome-extensions-cli install ${EXTENSION_LIST[@]} 2>/dev/null
@@ -269,6 +270,7 @@ sudo -u "$TARGET_USER" bash <<EOF
     enable_extension "tilingshell@ferrarodomenico.com"
     enable_extension "kimpanel@kde.org"
     enable_extension "rounded-window-corners@fxgn"
+    enable_extension "appindicatorsupport@rgcjonas.gmail.com"
 
     echo "   ➜ Extensions activation request sent."
 EOF
@@ -371,6 +373,12 @@ as_user echo "#!/bin/bash" >> "$HOME_DIR/Templates/new.sh"
 log "Fixing permissions..."
 chown -R $TARGET_USER:$TARGET_USER $HOME_DIR/.config
 chown -R $TARGET_USER:$TARGET_USER $HOME_DIR/.local
+
+
+# ===  flatpak 权限  ====
+  if command -v flatpak &>/dev/null; then
+    as_user flatpak override --user --filesystem=xdg-config/fontconfig
+  fi
 
 # 4. 安装 Shell 工具
 log "Installing shell tools..."

@@ -363,6 +363,7 @@ if [ -d "$TEMP_DIR/dotfiles" ]; then
   if command -v flatpak &>/dev/null; then
     as_user flatpak override --user --filesystem="$HOME_DIR/.themes"
     as_user flatpak override --user --filesystem=xdg-config/gtk-4.0
+    as_user flatpak override --user --filesystem=xdg-config/gtk-3.0
     as_user flatpak override --user --env=GTK_THEME=adw-gtk3-dark
     as_user flatpak override --user --filesystem=xdg-config/fontconfig
   fi
