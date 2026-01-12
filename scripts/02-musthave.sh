@@ -42,18 +42,39 @@ if [ "$ROOT_FSTYPE" == "btrfs" ]; then
     exe systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
 
     # GRUB Integration
-    if [ -d "/boot/grub" ] || [ -f "/etc/default/grub" ]; then
+if [ -d "/boot/grub" ] || [ -f "/etc/default/grub" ]; then
         log "Checking GRUB..."
+        
+        # --- 核心修改开始：探测 GRUB 在 ESP 分区中的真实路径 ---
+        TARGET_EFI_GRUB=""
+        
+        # 1. 优先检测 /efi/grub
         if [ -d "/efi/grub" ]; then
-            if [ ! -L "/boot/grub" ] || [ "$(readlink -f /boot/grub)" != "/efi/grub" ]; then
-                warn "Fixing /boot/grub symlink..."
+            TARGET_EFI_GRUB="/efi/grub"
+        # 2. 其次检测 /boot/efi/grub
+        elif [ -d "/boot/efi/grub" ]; then
+            TARGET_EFI_GRUB="/boot/efi/grub"
+        fi
+
+        # 3. 如果找到了有效的 EFI GRUB 路径，则执行软链接检查与修复
+        if [ -n "$TARGET_EFI_GRUB" ]; then
+            # 检查 /boot/grub 是否已经是正确的软链接
+            # readlink -f 能够获取链接的绝对路径，确保比对准确
+            if [ ! -L "/boot/grub" ] || [ "$(readlink -f /boot/grub)" != "$TARGET_EFI_GRUB" ]; then
+                warn "Fixing /boot/grub symlink to $TARGET_EFI_GRUB..."
+                
+                # 如果 /boot/grub 是一个存在的普通目录（非软链接），先进行备份
                 if [ -d "/boot/grub" ] && [ ! -L "/boot/grub" ]; then
                     exe mv /boot/grub "/boot/grub.bak.$(date +%s)"
                 fi
-                exe ln -sf /efi/grub /boot/grub
+                
+                # 创建指向真实路径的软链接
+                exe ln -sf "$TARGET_EFI_GRUB" /boot/grub
                 success "Symlink fix applied."
             fi
         fi
+        # --- 核心修改结束 ---
+
         exe pacman -Syu --noconfirm --needed grub-btrfs inotify-tools
         exe systemctl enable --now grub-btrfsd
 
