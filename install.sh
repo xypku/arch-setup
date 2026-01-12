@@ -70,7 +70,7 @@ EOF
 show_banner() {
     clear
     local r=$(( $RANDOM % 3 ))
-    echo -e "${H_CYAN}"
+    echo -e "${H_CYAN }"
     case $r in
         0) banner1 ;;
         1) banner2 ;;
