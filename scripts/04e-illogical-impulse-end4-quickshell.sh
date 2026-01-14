@@ -100,8 +100,6 @@ StartLimitBurst=3
 ExecStart=/usr/bin/start-hyprland
 Restart=on-failure
 RestartSec=2
-Environment=XDG_CURRENT_DESKTOP=hyprland
-Environment=XDG_SESSION_TYPE=wayland
 
 [Install]
 WantedBy=default.target
