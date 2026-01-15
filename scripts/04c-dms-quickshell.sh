@@ -193,7 +193,7 @@ if [ "$DMS_NIRI_INSTALLED" = true ]; then
     log "dms niri detected, configuring xdg-desktop-portal"
     exe pacman -S --noconfirm --needed xdg-desktop-portal-gnome
     
-    if ! grep -q 'xdg-desktop-portal' $DMS_NIRI_CONFIG_FILE; then
+    if ! grep -q '/usr/lib/xdg-desktop-portal-gnome' $DMS_NIRI_CONFIG_FILE; then
     log "configuring environment in niri config.kdl"
     echo 'spawn-sh-at-startup "dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP=niri & /usr/lib/xdg-desktop-portal-gnome"' >> $DMS_NIRI_CONFIG_FILE
     fi
