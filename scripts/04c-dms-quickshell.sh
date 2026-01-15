@@ -179,11 +179,13 @@ elif [ "$DMS_HYPR_INSTALLED" = true ]; then
         # Hyprland 的环境变量写法是 env = KEY,VALUE
         cat << EOT >> "$DMS_HYPR_CONFIG_FILE"
 
-# Fcitx5 Environment Variables
+# --- Added by Shorin-Setup Script ---
+# Fcitx5 Input Method Variables
 env = XMODIFIERS,@im=fcitx
 env = LC_CTYPE,en_US.UTF-8
-# locale
+# Locale Settings
 env = LANG,zh_CN.UTF-8
+# ----------------------------------
 EOT
 
     cp -rf "$PARENT_DIR/quickshell-dotfiles/"* "$HOME_DIR/.config/"

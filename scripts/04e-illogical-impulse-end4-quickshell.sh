@@ -100,7 +100,7 @@ if ! grep -q "XMODIFIERS,@im=fcitx" "$END4_HYPR_CUS_ENV" 2>/dev/null; then
     # 补充了 QT, GTK, SDL 的输入法变量，确保在各种应用中都能唤起输入法
     cat << EOT >> "$END4_HYPR_CUS_ENV"
 
-# --- Added by Auto-Setup Script ---
+# --- Added by Shorin-Setup Script ---
 # Fcitx5 Input Method Variables
 env = XMODIFIERS,@im=fcitx
 env = LC_CTYPE,en_US.UTF-8
