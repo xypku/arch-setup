@@ -526,7 +526,7 @@ hide_desktop_file "/usr/share/applications/org.gnome.Settings.desktop"
 #             "sizemode": "normal",
 #         }
 #     }
-# }
+# } 
 # EOF
 #             chown -R "$TARGET_USER" "$XUL_STORE"
 #             log "Cleaning up injection..."

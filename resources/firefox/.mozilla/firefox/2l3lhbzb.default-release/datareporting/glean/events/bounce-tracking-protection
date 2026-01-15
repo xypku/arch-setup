@@ -1,1 +1,0 @@
-{"timestamp":6415496,"category":"bounce.tracking.protection","name":"purge_action","extra":{"bounce_time":"1768399458","success":"true","site_host":"end-4.github.io","is_dry_run":"true","glean_timestamp":"1768457954436","require_stateful_bounces":"false"},"execution_counter":29}
