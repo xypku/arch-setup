@@ -70,35 +70,75 @@ else
 fi
 
 # ==============================================================================
-#  autologin
+#  tty autologin
 # ==============================================================================
-section "Config" "autostart"
+section "Config" "tty autostart"
 
 SVC_DIR="$HOME_DIR/.config/systemd/user"
-SVC_FILE="$SVC_DIR/dms-autostart.service"
+SVC_FILE="$SVC_DIR/niri-autostart.service"
 LINK="$SVC_DIR/default.target.wants/niri-autostart.service"
 
 # 确保目录存在
 as_user mkdir -p "$SVC_DIR/default.target.wants"
 # tty自动登录
 if [ "$SKIP_AUTOLOGIN" = false ]; then
-
     log "Configuring Niri Auto-start (TTY)..."
-    
-    # 1. 配置 TTY 自动登录
     mkdir -p "/etc/systemd/system/getty@tty1.service.d"
     echo -e "[Service]\nExecStart=\nExecStart=-/sbin/agetty --noreset --noclear --autologin $TARGET_USER - \${TERM}" >"/etc/systemd/system/getty@tty1.service.d/autologin.conf"
 
 fi
+# ==============================================================================
+#  dms 随图形化环境自动启动
+# ==============================================================================
+section "Config" "dms autostart"
 
+# dms.service 路径
+DMS_AUTOSTART_LINK="$HOME_DIR/.config/systemd/user/graphical-session.target.wants/dms.service"
+# 删除dms自己的服务链接（如果有的话）
+if [ -L "$DMS_AUTOSTART_LINK" ]; then
+    log "detect dms systemd service enabled, disabling ...." 
+    rm -f "$DMS_AUTOSTART_LINK"
+fi
 
+# 状态变量
+DMS_NIRI_INSTALLED=false
+DMS_HYPR_INSTALLED=false
+
+# 检查安装的是niri还是hyprland
+if command -v niri &>/dev/null; then 
+    DMS_NIRI_INSTALLED=true
+elif command -v hyprland &/dev/null; then
+    DMS_HYPR_INSTALLED=true
+fi
+
+# 修改niri配置文件设置dms自动启动
+if [ $DMS_NIRI_INSTALLED = true ]; then
+
+    if ! grep -E -q "^[[:space:]]*spawn-at-startup.*dms.*run" "$HOME_DIR/.config/niri/config.kdl"; then
+        log "enabling dms autostart in niri config.kdl..." 
+        echo 'spawn-at-startup "dmr" "run"' >> "$HOME_DIR/.config/niri/config.kdl"
+    else
+        log "dms autostart already exists in niri config.kdl, skipping."
+    fi
+
+# 修改hyprland的配置文件设置dms自动启动
+elif [ $DMS_HYPR_INSTALLED = true ]; then
+
+    true
+
+fi
+
+# ==============================================================================
+#  window manager autostart (if don't have any of dm)
+# ==============================================================================
+section "Config" "WM autostart"
 # 如果安装了niri
-if [ "$SKIP_AUTOLOGIN" = false ] && command -v niri &>/dev/null; then
-
-    # 创建dms自动登录服务
+if [ "$SKIP_AUTOLOGIN" = false ] && [ $DMS_NIRI_INSTALLED = true ] &>/dev/null; then
+    
+    # 创建niri自动登录服务
     cat <<EOT >"$SVC_FILE"
 [Unit]
-Description=Niri DMS Session Autostart
+Description=Niri Session Autostart
 After=graphical-session-pre.target
 StartLimitIntervalSec=60
 StartLimitBurst=3
@@ -115,25 +155,10 @@ EOT
     as_user ln -sf "$SVC_FILE" "$LINK"
     # 确保权限
     chown -R "$TARGET_USER" "$SVC_DIR"
-    
-    # dms自动启动
-    DMS_AUTOSTART_LINK="$HOME_DIR/.config/systemd/user/graphical-session.target.wants/dms.service"
-    if [ -L "$DMS_AUTOSTART_LINK" ]; then
-        log "detect dms systemd service enabled, disabling ...." 
-        rm -f "$DMS_AUTOSTART_LINK"
-    fi
-    
-    if ! grep -E -q "^[[:space:]]*spawn-at-startup.*dms.*run" "$HOME_DIR/.config/niri/config.kdl"; then
-        log "enabling dms autostart in niri config.kdl..." 
-        echo 'spawn-at-startup "dmr" "run"' >> "$HOME_DIR/.config/niri/config.kdl"
-    else
-        log "dms autostart already exists in niri config.kdl, skipping."
-    fi
-
     success "Niri/DMS auto-start enabled with DMS dependency."
 
 # 如果安装了hyprland
-elif [ "$SKIP_AUTOLOGIN" = false ] && command -v hyprland &>/dev/null; then
+elif [ "$SKIP_AUTOLOGIN" = false ] && [ $DMS_HYPR_INSTALLED = true ] &>/dev/null; then
 
     cat <<EOT >"$SVC_FILE"
 [Unit]
@@ -158,11 +183,4 @@ EOT
 
 fi
 
-if [ "$SKIP_AUTOLOGIN" = true ] && command -v niri  &>/dev/null; then 
-
-    log "Checking dms autostart..."
-
-elif [ "$SKIP_AUTOLOGIN" = false ] && command -v hyprland &>/dev/null; then
-
-fi
 log "Module 05 completed."

@@ -72,8 +72,8 @@ fi
 section "Config" "autostart"
 
 SVC_DIR="$HOME_DIR/.config/systemd/user"
-SVC_FILE="$SVC_DIR/end4-autostart.service"
-LINK="$SVC_DIR/default.target.wants/end4-autostart.service"
+SVC_FILE="$SVC_DIR/hyprland-autostart.service"
+LINK="$SVC_DIR/default.target.wants/hyprland-autostart.service"
 
 # 确保目录存在
 as_user mkdir -p "$SVC_DIR/default.target.wants"
@@ -92,7 +92,7 @@ if [ "$SKIP_AUTOLOGIN" = false ] && command -v hyprland &>/dev/null; then
 
     cat <<EOT >"$SVC_FILE"
 [Unit]
-Description=Hyprland End4 Session Autostart
+Description=Hyprland Session Autostart
 After=graphical-session-pre.target
 StartLimitIntervalSec=60
 StartLimitBurst=3
@@ -109,7 +109,7 @@ EOT
     as_user ln -sf "$SVC_FILE" "$LINK"
     # 确保权限
     chown -R "$TARGET_USER" "$SVC_DIR"
-    success "Hyprland End4 auto-start enabled."
+    success "Hyprland auto-start enabled."
 
 fi
 
