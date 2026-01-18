@@ -13,7 +13,7 @@ else
     exit 1
 fi
 
-section "Start" "Installing Illogical Impulse End4 (Quickshell)..."
+section "Start" "Installing Caelestia (Quickshell)..."
 
 # ==============================================================================
 #  2. Identify User & Display Manager Check
@@ -83,8 +83,13 @@ CAELESTIA_DIR="$HOME_DIR/.local/share/caelestia"
 
 # Clone to .local (Caelestia uses symlinks, not direct copies)
 log "Cloning repository to $CAELESTIA_DIR ..."
-if ! exe git clone "$CAELESTIA_REPO" "$CAELESTIA_DIR"; then
-    warn "Repository clone failed or already exists."
+if [ -d $CAELESTIA_DIR ]; then
+        warn "Repository clone failed or already exists. Deleting..."
+        rm -rf "$CAELESTIA_DIR"
+fi
+
+if exe git clone "$CAELESTIA_REPO" "$CAELESTIA_DIR"; then
+    log "repo cloned."
 fi
 
 log "Ensuring fish shell is installed..."
