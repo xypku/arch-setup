@@ -474,7 +474,7 @@ chown -R "$TARGET_USER" "$MOZILLA_DIR"
 
 section "Config" "clash tun"
 
-if comamnd -v clash-verge; then 
+if command -v clash-verge; then 
      /usr/bin/clash-verge-service &
      sleep 3
      clash-verge-service-uninstall || true
